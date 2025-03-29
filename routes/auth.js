@@ -66,7 +66,7 @@ router.post('/login', async (req, res) => {
     // Set token in HTTP-only cookie
     res.cookie('token', token, {
       httpOnly: true,
-      sameSite: 'Lax',
+      sameSite: 'none',
       secure: true,
     });
   
