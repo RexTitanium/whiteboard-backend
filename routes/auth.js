@@ -40,7 +40,6 @@ router.post('/register', async (req, res) => {
   
   module.exports = router;
 
-// Sample login route
 router.post('/login', async (req, res) => {
     const { email, password } = req.body;
   
@@ -68,10 +67,10 @@ router.post('/login', async (req, res) => {
     res.cookie('token', token, {
       httpOnly: true,
       sameSite: 'Lax',
-      secure: false, // set true for HTTPS
+      secure: true,
     });
   
-    res.json({ message: 'Logged in successfully', user: { id: user._id, name: user.name, email: user.email } });
+    res.json({ message: 'Logged in successfully', token, user: { id: user._id, name: user.name, email: user.email } });
   });
   
   
