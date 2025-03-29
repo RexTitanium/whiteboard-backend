@@ -3,6 +3,7 @@ const Board = require('../models/Board');
 const auth = require('../middleware/auth');
 const User = require('../models/User');
 const { v4: uuidv4 } = require('uuid');
+const s3 = require('../config/aws');
 
 const router = express.Router();
 
@@ -41,12 +42,44 @@ router.get('/public', async (_req, res) => {
   res.json(boards);
 });
 
+
+  // GET /boards/shared
+  router.get('/shared', auth, async (req, res) => {
+    try {
+      const boards = await Board.find({ 'sharedWith.userId': req.user._id });
+      res.json(boards);
+    } catch (err) {
+      console.error('Fetch shared boards error:', err);
+      res.status(500).json({ message: 'Server error' });
+    }
+  });
+
 // Get single board
 router.get('/:id', auth, async (req, res) => {
   try {
-    const board = await Board.findById(req.params.id);
+    const board = await Board.findById(req.params.id).lean();
     if (!board) return res.status(404).json({ message: 'Board not found' });
-    if (!board.userId.equals(req.user._id)) return res.status(403).json({ message: 'Access denied' });
+
+    const isOwner = board.userId.toString() === req.user._id.toString();
+    const isSharedUser = board.sharedWith?.some(
+      (entry) => entry.userId.toString() === req.user._id.toString()
+    );
+
+    if (!isOwner && !isSharedUser) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    // Populate sharedWith with emails
+    const userIds = board.sharedWith.map((entry) => entry.userId);
+    const users = await User.find({ _id: { $in: userIds } }, '_id email').lean();
+
+    board.sharedWith = board.sharedWith.map(entry => {
+      const match = users.find(u => u._id.toString() === entry.userId.toString());
+      return {
+        ...entry,
+        email: match?.email || 'Unknown',
+      };
+    });
 
     res.json(board);
   } catch (err) {
@@ -54,6 +87,7 @@ router.get('/:id', auth, async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 });
+
 
 // routes/boards.js
 router.post('/createBoard', auth, async (req, res) => {
@@ -76,32 +110,61 @@ router.post('/createBoard', auth, async (req, res) => {
   }
 });
 
+// UploadBoard
+
+router.post('/:id/upload', auth, async (req, res) => {
+  const { dataUrl } = req.body;
+  const buffer = Buffer.from(dataUrl.replace(/^data:image\/\w+;base64,/, ""), 'base64');
+  const boardId = req.params.id;
+
+  const params = {
+    Bucket: process.env.AWS_BUCKET_NAME,
+    Key: `boards/${boardId}.png`,
+    Body: buffer,
+    ContentEncoding: 'base64',
+    ContentType: 'image/png',
+  };
+
+  try {
+    const uploadResult = await s3.upload(params).promise();
+
+    const board = await Board.findById(boardId);
+    board.data = uploadResult.Location;
+    await board.save();
+
+    res.json({ url: uploadResult.Location });
+  } catch (err) {
+    console.error('S3 Upload Error:', err);
+    res.status(500).json({ message: 'Upload failed' });
+  }
+});
+
+
 // Update board
 router.put('/:id', auth, async (req, res) => {
-    try {
-      const board = await Board.findById(req.params.id);
-      if (!board || board.userId.toString() !== req.user.id) {
-        return res.status(403).json({ error: 'Forbidden' });
-      }
-  
-      const incomingName = req.body.name;
-  
-      if (incomingName && incomingName !== board.name) {
-        const uniqueName = await getUniqueBoardNameForUpdate(incomingName, req.user.id, req.params.id);
-        board.name = uniqueName;
-      }
-  
-      if (req.body.data !== undefined) {
-        board.data = req.body.data;
-      }
-  
-      await board.save();
-      res.json(board);
-    } catch (err) {
-      console.error('Update board error:', err);
-      res.status(500).json({ message: 'Server error' });
-    }
-  });
+  const board = await Board.findById(req.params.id);
+  if (!board) return res.status(404).json({ message: 'Board not found' });
+
+  const isOwner = board.userId.equals(req.user._id);
+  const sharedEntry = board.sharedWith.find(
+    (entry) => entry.userId.toString() === req.user._id.toString()
+  );
+
+  const isEditor = sharedEntry?.permission === 'edit';
+
+  if (!isOwner && !isEditor) {
+    return res.status(403).json({ message: 'No permission to save' });
+  }
+
+  board.name = req.body.name || board.name;
+  if (req.body.data !== undefined) {
+    board.data = req.body.data;
+  }
+
+  await board.save();
+  res.json(board);
+});
+
 
 // Delete board
 router.delete('/:id', auth, async (req, res) => {
@@ -112,6 +175,7 @@ router.delete('/:id', auth, async (req, res) => {
   res.json({ success: true });
 });
 
+//LRU post
 router.post('/:id/recent', auth, async (req, res) => {
     try {
       const user = await User.findById(req.user._id);
@@ -129,7 +193,41 @@ router.post('/:id/recent', auth, async (req, res) => {
       res.status(500).json({ message: 'Server error' });
     }
   });
-  
+
+  // Share Board
+  router.post('/:id/share', auth, async (req, res) => {
+    const { email, permission } = req.body;
+
+    if (!['view', 'edit'].includes(permission)) {
+      return res.status(400).json({ error: 'Invalid permission. Use "view" or "edit"' });
+    }
+
+    const board = await Board.findById(req.params.id);
+    const userToShare = await User.findOne({ email });
+
+    if (!board || !userToShare) {
+      return res.status(404).json({ error: 'Board or user not found' });
+    }
+
+    const existingIndex = board.sharedWith.findIndex(
+      (entry) => entry.userId.toString() === userToShare._id.toString()
+    );
+
+    if (existingIndex !== -1) {
+      board.sharedWith[existingIndex].permission = permission;
+      board.sharedWith[existingIndex].email = email; // 🔁 ensures email is up to date
+    } else {
+      board.sharedWith.push({
+        userId: userToShare._id,
+        email,
+        permission
+      });
+    }
+
+    await board.save();
+    res.json({ success: true });
+});
+
 
   module.exports = router;
   

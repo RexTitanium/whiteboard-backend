@@ -14,7 +14,14 @@ const boardSchema = new mongoose.Schema({
     type: String,
     default: 'private',
     enum: ['private', 'public']
-  }
+  },
+  sharedWith: [
+    {
+      userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      permission: { type: String, enum: ['view', 'edit'], default: 'edit' },
+    }
+  ]
+
 });
 
 module.exports = mongoose.model('Board', boardSchema);
