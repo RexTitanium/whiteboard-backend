@@ -1,4 +1,3 @@
-// models/User.js
 const mongoose = require('mongoose');
 
 const UserSchema = new mongoose.Schema({
@@ -15,9 +14,18 @@ const UserSchema = new mongoose.Schema({
   },
   password: {
     type: String,
-    required: true,
+    required: function () {
+      return !this.googleAuth;
+    },
   },
-  recents: [{ type: String, ref: 'Board' }]
+  googleAuth: {
+    type: Boolean,
+    default: false,
+  },
+  avatar: {
+    type: String, // URL to profile picture
+  },
+  recents: [{ type: String, ref: 'Board' }],
 });
 
 module.exports = mongoose.model('User', UserSchema);

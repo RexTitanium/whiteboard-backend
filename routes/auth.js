@@ -4,7 +4,10 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const auth = require('../middleware/auth');
 const User = require('../models/User');
+const { OAuth2Client } = require('google-auth-library');
 const router = express.Router();
+
+const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 router.post('/register', async (req, res) => {
     try {
@@ -37,8 +40,58 @@ router.post('/register', async (req, res) => {
       res.status(500).json({ message: 'Server error' });
     }
   });
+  router.post('/google-login', async (req, res) => {
+    const { credential } = req.body;
   
-  module.exports = router;
+    try {
+      const ticket = await client.verifyIdToken({
+        idToken: credential,
+        audience: process.env.GOOGLE_CLIENT_ID,
+      });
+  
+      const payload = ticket.getPayload();
+      const { email, name, picture } = payload;
+  
+      let user = await User.findOne({ email });
+  
+      if (!user) {
+        user = await User.create({
+          name,
+          email,
+          password: '',
+          googleAuth: true,
+          avatar: picture,
+        });
+      } else {
+  
+        if (!user.googleAuth) {
+          return res.status(403).json({ message: 'Use email/password login instead' });
+        }
+      }
+  
+  
+      const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '1d' });
+  
+      res.cookie('token', token, {
+        httpOnly: true,
+        sameSite: 'Lax',
+        secure: false, // change to true in production with HTTPS
+      });
+  
+      res.json({
+        message: 'Logged in with Google',
+        user: {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          avatar: user.avatar,
+        },
+      });
+    } catch (err) {
+      console.error('Google Login Error:', err);
+      res.status(401).json({ message: 'Google authentication failed' });
+    }
+  });
 
 router.post('/login', async (req, res) => {
     const { email, password } = req.body;
@@ -82,7 +135,7 @@ router.post('/login', async (req, res) => {
   
 router.get('/me', auth, async (req, res) => {
     try {
-      const user = await User.findById(req.user._id); // ✅
+      const user = await User.findById(req.user._id);
       if (!user) return res.status(404).json({ message: 'User not found' });
   
       res.json({ _id: user._id, name: user.name, email: user.email });
