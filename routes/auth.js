@@ -81,6 +81,7 @@ router.post('/register', async (req, res) => {
   
       res.json({
         message: 'Logged in with Google',
+        token: token,
         user: {
           id: user._id,
           name: user.name,
