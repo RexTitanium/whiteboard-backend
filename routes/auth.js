@@ -40,6 +40,7 @@ router.post('/register', async (req, res) => {
       res.status(500).json({ message: 'Server error' });
     }
   });
+  
   router.post('/google-login', async (req, res) => {
     const { credential } = req.body;
   
@@ -73,7 +74,7 @@ router.post('/register', async (req, res) => {
       const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '1d' });
   
       res.cookie('token', token, {
-        httpOnly: false,
+        httpOnly: true,
         sameSite: 'Lax',
         secure: true, // change to true in production with HTTPS
       });
