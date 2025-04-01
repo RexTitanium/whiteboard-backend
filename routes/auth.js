@@ -31,7 +31,7 @@ router.post('/register', async (req, res) => {
       res.cookie('token', token, {
         httpOnly: true,
         sameSite: 'Lax',
-        secure: false,
+        secure: process.env.NODE_ENV === 'production'
       });
   
       res.status(201).json({ message: 'User registered', user: { id: user._id, name, email } });
@@ -52,7 +52,7 @@ router.post('/register', async (req, res) => {
   
       const payload = ticket.getPayload();
       const { email, name, picture } = payload;
-  
+      
       let user = await User.findOne({ email });
   
       if (!user) {
@@ -76,7 +76,7 @@ router.post('/register', async (req, res) => {
       res.cookie('token', token, {
         httpOnly: true,
         sameSite: 'Lax',
-        secure: true, // change to true in production with HTTPS
+        secure: process.env.NODE_ENV === 'production'
       });
   
       res.json({
@@ -122,7 +122,7 @@ router.post('/login', async (req, res) => {
     res.cookie('token', token, {
       httpOnly: true,
       sameSite: 'none',
-      secure: true,
+      secure: process.env.NODE_ENV === 'production',
     });
   
     res.json({ message: 'Logged in successfully', token, user: { id: user._id, name: user.name, email: user.email } });
@@ -130,7 +130,11 @@ router.post('/login', async (req, res) => {
   
   
   router.post('/logout', (req, res) => {
-    res.clearCookie('token');
+    res.clearCookie('token', {
+      httpOnly: true,
+      sameSite: 'Lax',
+      secure: process.env.NODE_ENV === 'production',
+    });    
     res.json({ message: 'Logged out' });
   });
 
