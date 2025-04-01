@@ -30,10 +30,10 @@ router.post('/register', async (req, res) => {
   
       res.cookie('token', token, {
         httpOnly: true,
-        sameSite: 'Lax',
-        secure: process.env.NODE_ENV === 'production'
+        sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'Lax',
+        secure: process.env.NODE_ENV === 'production',
       });
-  
+      
       res.status(201).json({ message: 'User registered', user: { id: user._id, name, email } });
     } catch (err) {
       console.error('Registration error:', err);
@@ -75,10 +75,10 @@ router.post('/register', async (req, res) => {
   
       res.cookie('token', token, {
         httpOnly: true,
-        sameSite: 'Lax',
-        secure: process.env.NODE_ENV === 'production'
+        sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'Lax',
+        secure: process.env.NODE_ENV === 'production',
       });
-  
+      
       res.json({
         message: 'Logged in with Google',
         token: token,
@@ -121,9 +121,10 @@ router.post('/login', async (req, res) => {
     // Set token in HTTP-only cookie
     res.cookie('token', token, {
       httpOnly: true,
-      sameSite: 'none',
+      sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'Lax',
       secure: process.env.NODE_ENV === 'production',
     });
+    
   
     res.json({ message: 'Logged in successfully', token, user: { id: user._id, name: user.name, email: user.email } });
   });
@@ -132,7 +133,7 @@ router.post('/login', async (req, res) => {
   router.post('/logout', (req, res) => {
     res.clearCookie('token', {
       httpOnly: true,
-      sameSite: 'Lax',
+      sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'Lax',
       secure: process.env.NODE_ENV === 'production',
     });    
     res.json({ message: 'Logged out' });
