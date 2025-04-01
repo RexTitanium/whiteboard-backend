@@ -43,16 +43,16 @@ router.get('/public', async (_req, res) => {
 });
 
 
-  // GET /boards/shared
-  router.get('/shared', auth, async (req, res) => {
-    try {
-      const boards = await Board.find({ 'sharedWith.userId': req.user._id });
-      res.json(boards);
-    } catch (err) {
-      console.error('Fetch shared boards error:', err);
-      res.status(500).json({ message: 'Server error' });
-    }
-  });
+// GET /boards/shared
+router.get('/shared', auth, async (req, res) => {
+  try {
+    const boards = await Board.find({ 'sharedWith.userId': req.user._id });
+    res.json(boards);
+  } catch (err) {
+    console.error('Fetch shared boards error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
 
 // Get single board
 router.get('/:id', auth, async (req, res) => {
@@ -156,13 +156,46 @@ router.put('/:id', auth, async (req, res) => {
     return res.status(403).json({ message: 'No permission to save' });
   }
 
-  board.name = req.body.name || board.name;
+  board.name = getUniqueBoardNameForUpdate(req.body.name)|| board.name;
   if (req.body.data !== undefined) {
     board.data = req.body.data;
   }
 
   await board.save();
   res.json(board);
+});
+
+
+
+router.delete('/:id/share', auth, async (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return res.status(400).json({ error: 'Email is required' });
+  }
+
+  const board = await Board.findById(req.params.id);
+  if (!board) {
+    return res.status(404).json({ error: 'Board not found' });
+  }
+
+  const userToRemove = await User.findOne({ email });
+  if (!userToRemove) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+
+  const originalLength = board.sharedWith.length;
+
+  board.sharedWith = board.sharedWith.filter(
+    (entry) => entry.userId.toString() !== userToRemove._id.toString()
+  );
+
+  if (board.sharedWith.length === originalLength) {
+    return res.status(404).json({ error: 'User not shared with this board' });
+  }
+
+  await board.save();
+  res.json({ success: true, message: 'User removed from shared list' });
 });
 
 
@@ -175,15 +208,14 @@ router.delete('/:id', auth, async (req, res) => {
   res.json({ success: true });
 });
 
+
 //LRU post
 router.post('/:id/recent', auth, async (req, res) => {
     try {
       const user = await User.findById(req.user._id);
       
       if (!user) return res.status(404).json({ message: 'User not found' });
-      console.log('Before update:', user.recents);
       user.recents = [req.params.id, ...user.recents.filter(id => id !== req.params.id)].slice(0, 10);
-      console.log('After update:', user.recents);
       
       await user.save();
       
@@ -194,38 +226,38 @@ router.post('/:id/recent', auth, async (req, res) => {
     }
   });
 
-  // Share Board
-  router.post('/:id/share', auth, async (req, res) => {
-    const { email, permission } = req.body;
+// Share Board
+router.post('/:id/share', auth, async (req, res) => {
+  const { email, permission } = req.body;
 
-    if (!['view', 'edit'].includes(permission)) {
-      return res.status(400).json({ error: 'Invalid permission. Use "view" or "edit"' });
-    }
+  if (!['view', 'edit'].includes(permission)) {
+    return res.status(400).json({ error: 'Invalid permission. Use "view" or "edit"' });
+  }
 
-    const board = await Board.findById(req.params.id);
-    const userToShare = await User.findOne({ email });
+  const board = await Board.findById(req.params.id);
+  const userToShare = await User.findOne({ email });
 
-    if (!board || !userToShare) {
-      return res.status(404).json({ error: 'Board or user not found' });
-    }
+  if (!board || !userToShare) {
+    return res.status(404).json({ error: 'Board or user not found' });
+  }
 
-    const existingIndex = board.sharedWith.findIndex(
-      (entry) => entry.userId.toString() === userToShare._id.toString()
-    );
+  const existingIndex = board.sharedWith.findIndex(
+    (entry) => entry.userId.toString() === userToShare._id.toString()
+  );
 
-    if (existingIndex !== -1) {
-      board.sharedWith[existingIndex].permission = permission;
-      board.sharedWith[existingIndex].email = email; // 🔁 ensures email is up to date
-    } else {
-      board.sharedWith.push({
-        userId: userToShare._id,
-        email,
-        permission
-      });
-    }
+  if (existingIndex !== -1) {
+    board.sharedWith[existingIndex].permission = permission;
+    board.sharedWith[existingIndex].email = email; // 🔁 ensures email is up to date
+  } else {
+    board.sharedWith.push({
+      userId: userToShare._id,
+      email,
+      permission
+    });
+  }
 
-    await board.save();
-    res.json({ success: true });
+  await board.save();
+  res.json({ success: true });
 });
 
 
